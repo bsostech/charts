@@ -1,0 +1,92 @@
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ template "ipfs.servicename" . }}
+  labels:
+    app: {{ template "ipfs.name" . }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+  - port: 5001
+    targetPort: 5001
+    protocol: TCP
+    name: api
+  - port: 8080
+    targetPort: 8080
+    name: gateway
+  - port: 9094
+    targetPort: 9094
+    protocol: TCP
+    name: cluster-api
+  selector:
+    app: {{ template "ipfs.name" . }}
+    release: {{ .Release.Name }}
+
+{{- if .Values.swarm.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ template "ipfs.servicename" . }}-swarm-primary
+  labels:
+    app: {{ template "ipfs.name" . }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "5001"
+    prometheus.io/path: /debug/metrics/prometheus
+spec:
+  type: {{ .Values.swarm.type }}
+  ports:
+  - port: 4001
+    {{- if  eq .Values.swarm.type "NodePort" }}
+    nodePort: {{ .Values.swarm.nodePort.primary }}
+    {{- end }}
+    targetPort: 4001
+    protocol: TCP
+    name: swarm
+  - port: 9096
+    targetPort: 9096
+    name: cluster-proxy
+  selector:
+    app: {{ template "ipfs.name" . }}
+    release: {{ .Release.Name }}
+    role: primary
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ template "ipfs.servicename" . }}-swarm-replica
+  labels:
+    app: {{ template "ipfs.name" . }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "5001"
+    prometheus.io/path: /debug/metrics/prometheus
+spec:
+  type: {{ .Values.swarm.type }}
+  ports:
+  - port: 4001
+    {{- if  eq .Values.swarm.type "NodePort" }}
+    nodePort: {{ .Values.swarm.nodePort.replica }}
+    {{- end }}
+    targetPort: 4001
+    protocol: TCP
+    name: swarm
+  - port: 9096
+    targetPort: 9096
+    name: cluster-proxy
+  selector:
+    app: {{ template "ipfs.name" . }}
+    release: {{ .Release.Name }}
+    role: replica
+{{- end -}}

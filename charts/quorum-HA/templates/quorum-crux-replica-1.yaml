@@ -1,0 +1,239 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Release.Name }}-replica-1
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  updateStrategy:
+    {{- toYaml .Values.node.strategy | nindent 4 }}
+  serviceName: {{ .Release.Name }}-quorumtx-replica1
+  selector:
+    matchLabels:
+      {{- include "node.replica1.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "node.replica1.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ .Values.serviceAccount }}
+      initContainers:
+      - name: quorum-replica-init
+        image: {{ .Values.images.quorumInit }}
+        imagePullPolicy: {{ .Values.pullPolicy }}
+        workingDir: /tmp
+        command: ["bash"]
+        args:
+        - "-cx"
+        - |-
+          #!/bin/bash
+          if [ ! -f {{ .Values.node.mountPath }}/dd/geth/transactions.rlp ]
+          then
+            sleep 350
+            mkdir -p {{ .Values.node.mountPath }}/dd/{geth,keystore}
+            geth --datadir={{ .Values.node.mountPath }}/dd --password /tmp/password/password.txt account new
+            {{- if .Values.node.networkAdmin }}
+            cp /tmp/nodekey/* {{ .Values.node.mountPath }}/dd/geth/nodekey
+            {{- end }}
+            geth --datadir {{ .Values.node.mountPath }}/dd init /tmp/genesis/genesis.json
+            base64 -d /tmp/rawchaindata/chaindata > /tmp/chaindata.tar.gz
+            tar zxvf chaindata.tar.gz
+            geth --datadir {{ .Values.node.mountPath }}/dd import /tmp/chaindata
+          fi
+          if [ ! -f {{ .Values.node.mountPath }}/dd/permissioned-nodes.json ]
+          then
+            cp /tmp/staticnode/* {{ .Values.node.mountPath }}/dd
+            cp /tmp/permissionednode/* {{ .Values.node.mountPath }}/dd
+            cp /tmp/permissionconf/* {{ .Values.node.mountPath }}/dd
+          fi
+        securityContext:
+          {{- toYaml .Values.node.containerSecurityContext | nindent 10 }}
+        volumeMounts:
+        - name: quorum-data
+          mountPath: {{ .Values.node.mountPath }}
+          subPath: {{ .Values.node.subPath.replica1 }}
+        - name: genesis-config
+          mountPath: /tmp/genesis
+        - name: quorum-password-config
+          mountPath: /tmp/password
+        - name: quorum-permission-chaindata
+          mountPath: /tmp/rawchaindata
+        - name: quorum-permission-config
+          mountPath: /tmp/permissionconf
+        - name: quorum-staticnode-config
+          mountPath: /tmp/staticnode
+        - name: quorum-permissionednode-config
+          mountPath: /tmp/permissionednode
+        {{- if .Values.node.networkAdmin }}
+        - name: quorum-nodekey-config
+          mountPath: /tmp/nodekey
+        {{- end }}
+      containers:
+      - image: {{ .Values.images.quorum }}
+        imagePullPolicy: {{ .Values.pullPolicy }}
+        name: quorum
+        env:
+        - name: PRIVATE_CONFIG
+          value: {{ .Values.node.mountPath }}/constellation/tm.ipc
+        - name: ENABLED_API
+          value: admin,db,eth,debug,miner,net,shh,txpool,personal,web3,quorum,clique,quorumPermission
+        command: ["sh"]
+        args:
+        - "-cx"
+        - |-
+          #!/bin/sh
+          DOWN=true
+          while $DOWN; do
+            sleep 5
+            if [ -S "{{ .Values.node.mountPath }}/constellation/tm.ipc" ]; then
+              DOWN=false
+            fi
+          done
+          echo "[*] Starting node"
+          geth --datadir {{ .Values.node.mountPath }}/dd \
+            --allow-insecure-unlock \
+            --permissioned \
+            --verbosity 5 \
+            --gcmode=archive \
+            --networkid 55929 \
+            --syncmode full --mine --minerthreads 2 \
+            --rpccorsdomain="*" --rpcvhosts=* \
+            --rpc --rpcaddr 0.0.0.0 \
+            --rpcapi $ENABLED_API \
+            --ws --wsaddr 0.0.0.0 \
+            --wsport 8546 --wsorigins="*" \
+            --wsapi $ENABLED_API \
+            --nodiscover \
+            --unlock 0 --password /tmp/password/password.txt
+        ports:
+        - containerPort: 8545
+        - containerPort: 8546
+        - containerPort: 30303
+        livenessProbe:
+          exec:
+            command:
+            - geth
+            - --datadir 
+            - {{ .Values.node.mountPath }}/dd
+            - --exec
+            - "eth.blockNumber"
+            - attach
+            - {{ .Values.node.mountPath }}/dd/geth.ipc
+          initialDelaySeconds: 30
+        resources: 
+          {{- toYaml .Values.node.quorum.resources | nindent 10 }}
+        securityContext:
+          {{- toYaml .Values.node.containerSecurityContext | nindent 10 }}
+        volumeMounts:
+        - name: quorum-data
+          mountPath: {{ .Values.node.mountPath }}
+          subPath: {{ .Values.node.subPath.replica1 }}
+        - name: quorum-password-config
+          mountPath: /tmp/password
+      - image: {{ .Values.images.crux }}
+        imagePullPolicy: {{ .Values.pullPolicy }}
+        name: crux
+        resources: 
+          {{- toYaml .Values.node.crux.resources | nindent 10 }}
+        command: ["/bin/sh"]
+        args:
+        - "-cx"
+        - |-
+          #!/bin/sh
+          sleep {{ .Values.node.sleepTime }}
+          if [ ! -f {{ .Values.node.mountPath }}/constellation/keys/tm.key ]
+          then
+            mkdir -p {{ .Values.node.mountPath }}/constellation/keys
+            cp /tmp/priv/* {{ .Values.node.mountPath }}/constellation/keys/
+            cp /tmp/pub/* {{ .Values.node.mountPath }}/constellation/keys/
+          fi
+          crux \
+            --url="dns://{{ .Values.node.crux.url.myURL }}:{{ .Values.node.crux.ports.myPort }}" \
+            --port={{ .Values.node.crux.ports.myPort }} \
+            --socket="tm.ipc" \
+            --othernodes="dns://{{ .Values.node.crux.url.bootnodeURL }}:{{ .Values.node.crux.ports.bootnodePort }}" \
+            --publickeys="keys/tm.pub" \
+            --privatekeys="keys/tm.key" \
+            --workdir="{{ .Values.node.mountPath }}/constellation" \
+            --tls=false \
+            --networkinterface="0.0.0.0" \
+            --dbpath="{{ .Values.node.crux.dbPath }}" \
+            --verbosity="3" 
+        ports:
+        - containerPort: 9000
+        securityContext:
+          {{- toYaml .Values.node.containerSecurityContext | nindent 10 }}
+        volumeMounts:
+        - name: quorum-data
+          mountPath: {{ .Values.node.mountPath }}
+          subPath: {{ .Values.node.subPath.replica1 }}
+        - name: crux-publickey-config
+          mountPath: /tmp/pub/
+        - name: crux-privatekey-config
+          mountPath: /tmp/priv/
+      imagePullSecrets:
+      - name: {{ .Values.imagePullSecrets }}
+      securityContext:
+        {{- toYaml .Values.node.securityContext | nindent 8 }}
+      volumes:
+      - name: quorum-data
+        persistentVolumeClaim:
+          claimName: {{ .Values.node.existingClaim }}
+      - name: quorum-permission-chaindata
+        configMap:
+          name: quorum-permission-config
+          items:
+            - key: chaindata
+              path: chaindata
+      - name: quorum-permission-config
+        configMap:
+          name: quorum-permission-config
+          items:
+            - key: permission-config.json
+              path: permission-config.json
+      - name: quorum-staticnode-config
+        configMap:
+          name: quorum-staticnodes-config
+          items:
+            - key: static-nodes.json
+              path: static-nodes.json
+      - name: quorum-permissionednode-config
+        configMap:
+          name: quorum-staticnodes-config
+          items:
+            - key: permissioned-nodes.json
+              path: permissioned-nodes.json
+      - name: genesis-config
+        configMap:
+          name: genesis-config
+          items:
+            - key: genesis.json
+              path: genesis.json
+      - name: crux-publickey-config
+        secret:
+          secretName: {{ .Release.Name }}-crux-secret
+          items:
+            - key: tm.pub
+              path: tm.pub
+      - name: crux-privatekey-config
+        secret:
+          secretName: {{ .Release.Name }}-crux-secret
+          items:
+            - key: tm.key
+              path: tm.key
+      - name: quorum-password-config
+        secret:
+          secretName: {{ .Release.Name }}-quorum-secret
+          items:
+            - key: password.txt
+              path: password.txt
+      {{- if .Values.node.networkAdmin }}
+      - name: quorum-nodekey-config
+        secret:
+          secretName: {{ .Release.Name }}-quorum-secret
+          items:
+            - key: nodekey1
+              path: nodekey1
+      {{- end}}

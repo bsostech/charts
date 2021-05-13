@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-nodemanager-config
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+data:
+  setup.conf: |-
+    ROLE={{ .Release.Name }}
+    NODENAME={{ .Release.Name }}
+    CURRENT_IP={{ .Release.Name }}
+    THIS_NODEMANAGER_PORT={{ .Values.nodeManager.ports.backend }}
+    RPC_PORT={{ .Values.nodeManager.ports.quorumRPC }}
+    RAFT_ID=1
+    CONTRACT_ADD=0x0000000000000000000000000000000000000030
+    MODE=ACTIVE
+    STATE=I
+    REGISTERED=
+    PUBKEY=_PUBKEY_
+

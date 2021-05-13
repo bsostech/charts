@@ -1,0 +1,49 @@
+replicaCount: 1
+
+image: 
+  ipfs: ipfs/go-ipfs:v0.7.0
+  cluster: ipfs/ipfs-cluster:latest
+
+imagePullSecrets: 
+
+service:
+  type: ClusterIP
+
+swarm:
+  enabled: true
+  type: ClusterIP
+  nodePort:
+    primary:
+    replica:
+  # loadBalancerIP: ""
+  # externalIP: ""
+  ## Further config for service of type NodePort
+  ## Default config with empty string "" will assign a dynamic nodePort
+  # nodePort: "31268"
+  ## If static nodePort configuration is required it can be enabled as below
+  ## Configure ports in allowable range (eg. 30000 - 32767 on minikube)
+  # nodePort: 34001
+
+resources: {}
+
+persistence:
+  enabled: true
+  ## ipfs data Persistent Volume Storage Class
+  ## If defined, storageClassName: <storageClass>
+  ## If set to "-", storageClassName: "", which disables dynamic provisioning
+  ## If undefined (the default) or set to null, no storageClassName spec is
+  ##   set, choosing the default provisioner.  (gp2 on AWS, standard on
+  ##   GKE, AWS & OpenStack)
+  ##
+  # storageClass: "-"
+  existingClaim: ipfs-node2
+  size: "8Gi"
+  accessModes:
+    - ReadWriteMany
+  subPath: 
+    primary:
+      cluster: ipfs-node2-cluster-1
+      ipfs: ipfs-node2-data-1
+    replica:
+      cluster: ipfs-node2-cluster-2
+      ipfs: ipfs-node2-data-2

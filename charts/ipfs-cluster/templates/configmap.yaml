@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-peerstore-primary
+  namespace: {{ .Release.Namespace }}
+data:
+  peerstore: |-
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Release.Name }}-peerstore-replica
+  namespace: {{ .Release.Namespace }}
+data:
+  peerstore: |-

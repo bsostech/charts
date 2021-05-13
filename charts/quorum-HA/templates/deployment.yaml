@@ -1,0 +1,69 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-explorer
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "common.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  strategy:
+    {{- toYaml .Values.nodeManager.strategy | nindent 4 }}
+  selector:
+    matchLabels:
+      {{- include "nodemanager.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "nodemanager.selectorLabels" . | nindent 8 }}
+    spec:
+      containers:
+      - name: explorer
+        image: {{ .Values.images.nodemanager }}
+        imagePullPolicy: {{ .Values.pullPolicy }}
+        workingDir: /tmp
+        command: ["/bin/sh"]
+        args:
+        - "-cx"
+        - |-
+          sleep {{ .Values.nodeManager.sleepTime }}
+          ./NodeManager http://{{ .Release.Name }}-rpc:8545 22004
+        securityContext:
+          {{- toYaml .Values.nodeManager.containerSecurityContext | nindent 10 }}
+        ports:
+          - containerPort: 22004
+            protocol: TCP
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 22004
+          {{- toYaml .Values.nodeManager.livenessProbe | nindent 10 }}
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 22004
+          {{- toYaml .Values.nodeManager.readinessProbe | nindent 10 }}
+        resources:
+          {{- toYaml .Values.nodeManager.resources | nindent 10 }}
+        volumeMounts:
+        - name: backend-config
+          mountPath: /home/
+        - name: genesis-config
+          mountPath: /home/node
+      restartPolicy: Always
+      securityContext:
+        {{- toYaml .Values.nodeManager.securityContext | nindent 8 }}
+      volumes:
+      - name: genesis-config
+        configMap:
+          name: genesis-config
+          items:
+          - key: genesis.json
+            path: genesis.json
+      - name: backend-config
+        configMap:
+          name: {{ .Release.Name }}-nodemanager-config
+          items:
+          - key: setup.conf
+            path: setup.conf
+        

@@ -1,0 +1,134 @@
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+#Provide the number of replicas for pods
+#Eg. replicaCount: 1
+replicaCount: 1
+
+#Provide the image pull policy
+#Eg. pullPolicy: 1
+pullPolicy: Always
+
+#Provide the k8s platform
+#Eg. k8sProvider: aws
+k8sProvider: aws
+
+#Provide the image pull secrets if use private docker registery
+imagePullSecrets: 
+
+#Provide the existing Service Account 
+serviceAccount: 
+
+#These are the various docker images being used by this chart. update them as needed
+images:
+  #Provide the valid image name and version for quorum node
+  #Eg. node: denny60004/quorum:latest
+  quorum: denny60004/quorum:latest
+  #Provide the valid image name and version for quorum init
+  #Eg. node: denny60004/quoruminit:latest
+  quorumInit: denny60004/quoruminit:latest
+  #Provide the valid image name and version for crux
+  #Eg. crux: denny60004/quorum:latest
+  crux: denny60004/crux:latest
+  #Provide the valid image name and version for crux init
+  #Eg. node: denny60004/cruxinit:latest
+  cruxInit: denny60004/cruxinit:latest
+  #Provide the valid image name and version for nodemanager
+  #Eg. nodemanager: denny60004/nodemanager:latest
+  nodemanager: denny60004/nodemanager:latest
+
+node:
+  #Provide period to let k8s reload secret and configmap
+  sleepTime: 20
+  #Provide the existing claim and subPath
+  existingClaim: 
+  subPath:
+    primary:
+    replica1:
+    replica2:
+  #Provide the node pod update strategy
+  strategy:
+    type: RollingUpdate
+  networkAdmin: 
+  networkInit: 
+  mountPath: /qdata
+  #Provide the securityContext for node's pod
+  securityContext:
+    fsGroup: 1000400000
+    runAsUser: 1000400000
+  #Provide the node's container securityContext
+  containerSecurityContext:
+    allowPrivilegeEscalation: false
+    privileged: false
+    runAsNonRoot: true
+  quorum:
+    #Provide the quorum container and service ports
+    ports:
+      rpc: 8545
+      p2p: 30303
+    #Provide the rpc service type
+    rpcServiceType: ClusterIP
+    #Provide the p2p service type
+    p2pServiceType: LoadBalancer
+    #Provide the quorum network admin port
+    adminP2PPort: 30303
+    #Provide the quorum coinbase account's password
+    password: 
+    #Provide the quorum container resource
+    resources: {}
+  crux:
+    #Provide the crux's ports
+    ports:
+      myPort: 9000
+      bootnodePort: 9000
+    #Provide the crux's urls
+    url:
+      myURL: 
+      bootnodeURL: node-1-crux
+    #Provide the crux service type
+    serviceType: LoadBalancer
+    #Provide the crux container resource
+    resources: {}
+    #Provide the crux storage sql path
+    dbPath: user:password@tcp(127.0.0.1:3306)/quorum?charset=utf8mb4&parseTime=true
+
+nodeManager:
+  #Provide period to let k8s reload secret and configmap
+  sleepTime: 400
+  #Provide the nodeManager pod update strategy
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+  ports:
+    #Provide the port for quorum rpc port
+    quorumRPC: 8545
+    #Provide the port for nodemanager backend listen port
+    backend: 22004
+  #Provide the crux container resource
+  resources: {}
+  #Provide the readinessProbe for nodemanager
+  readinessProbe:
+    initialDelaySeconds: 425
+    periodSeconds: 5
+    timeoutSeconds: 10
+  #Provide the livenessProbe for nodemanager
+  livenessProbe:
+    initialDelaySeconds: 450
+    periodSeconds: 5
+    timeoutSeconds: 5
+  #Provide the securityContext for nodemanager pod
+  securityContext:
+    fsGroup: 1000400000
+    runAsUser: 1000400000
+  #Provide the securityContext for nodemanager container
+  containerSecurityContext:
+    capabilities:
+      drop:
+        - ALL
+    allowPrivilegeEscalation: false
+    privileged: false
+    runAsNonRoot: true
+
+

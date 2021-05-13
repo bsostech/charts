@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ template "ipfs.fullname" . }}-primary
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app: {{ template "ipfs.name" . }}
+    chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+    heritage: {{ .Release.Service }}
+    release: {{ .Release.Name }}
+    role: primary
+spec:
+  replicas: {{ .Values.replicaCount }}
+  serviceName: {{ template "ipfs.servicename" . }}
+  selector:
+    matchLabels:
+      app: {{ template "ipfs.name" . }}
+      release: {{ .Release.Name }}
+      role: primary
+  template:
+    metadata:
+      labels:
+        app: {{ template "ipfs.name" . }}
+        chart: {{ .Chart.Name }}-{{ .Chart.Version }}
+        heritage: {{ .Release.Service }}
+        release: {{ .Release.Name }}
+        role: primary
+    spec:
+      securityContext:
+        # The image runs as uid 1000 by default, and needs to be able to write to
+        # the persistent volume to be able to start.
+        fsGroup: 1000400000
+        runAsUser: 1000400000
+      imagePullSecrets:
+      - name: harbor-tpebnkbcfint
+      containers:
+      - name: ipfs-cluster
+        image: {{ .Values.image.cluster }}
+        ports:
+        - containerPort: 9094
+          name: cluster-api
+        - containerPort: 9096
+          name: cluster-proxy
+        env:
+        - name: CLUSTER_PEERNAME
+          value: {{ .Release.Name }}-primary
+        - name: CLUSTER_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: {{ .Release.Name }}-secret
+              key: cluster-secret
+        - name: CLUSTER_IPFSHTTP_NODEMULTIADDRESS
+          value: "/dns4/127.0.0.1/tcp/5001"
+        - name: CLUSTER_CRDT_TRUSTEDPEERS
+          value: "*"
+        - name: CLUSTER_RESTAPI_HTTPLISTENMULTIADDRESS
+          value: "/ip4/0.0.0.0/tcp/9094"
+        - name: CLUSTER_MONITORPINGINTERVAL
+          value: "2s"
+        volumeMounts:
+          - name: ipfs-storage
+            mountPath: /data/ipfs-cluster
+            subPath: {{ .Values.persistence.subPath.primary.cluster }}
+          - name: peerstore
+            mountPath: /data/ipfs-cluster/peerstore
+            subPath: peerstore
+      - name: ipfs
+        image: {{ .Values.image.ipfs }}
+        livenessProbe:
+          httpGet:
+            path: /debug/metrics/prometheus
+            port: api
+          initialDelaySeconds: 15
+          periodSeconds: 3
+        readinessProbe:
+          httpGet:
+            path: /debug/metrics/prometheus
+            port: api
+          initialDelaySeconds: 15
+          periodSeconds: 3
+        ports:
+{{- if .Values.swarm.enabled }}
+        - containerPort: 4001
+          name: swarm
+{{- end }}
+        - containerPort: 5001
+          name: api
+        - containerPort: 8080
+          name: gateway
+        volumeMounts:
+          - name: ipfs-storage
+            mountPath: /data/ipfs
+            subPath: {{ .Values.persistence.subPath.primary.ipfs }}
+      volumes:
+      - name: ipfs-storage
+        persistentVolumeClaim:
+          claimName: {{ .Values.persistence.existingClaim }}
+      - name: peerstore
+        configMap:
+          name: {{ .Release.Name }}-peerstore-primary
+          items:
+          - key: peerstore
+            path: peerstore
